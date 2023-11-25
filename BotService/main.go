@@ -23,10 +23,10 @@ func main() {
             //запрос в бд по ID
             //if exists {TODO}
             if update.Message.From.ID == int64(2003265450) {
-                // валидация (сообщение должно содержать int < 100)
+                // валидация (message must contain only int fom 1 to 50)
                 n, err := strconv.Atoi(update.Message.Text)
-                if err != nil || n > 100 || n < 1 {
-                    api.SendMessage("Please send number from 1 to 100", update.ChatID(), nil)
+                if err != nil || n < 1 || n > 50 {
+                    api.SendMessage("Please send number from 1 to 50", update.ChatID(), nil)
                 } else {
                     //MAIN FUNCTIONALITY
                     api.SendMessage("OKAY LEGO", update.ChatID(), nil)
