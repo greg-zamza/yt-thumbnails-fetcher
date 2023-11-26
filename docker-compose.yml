@@ -3,8 +3,7 @@ services:
   Database:
     container_name: DatabaseService
     image: postgres:latest
-    enviroment:
-      POSTGRES_DB: "${POSTGRES_DB}"
+    environment:
       POSTGRES_USER: "${POSTGRES_USER}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       PGDATA: "/var/lib/postgresql/data/pgdata"
@@ -17,21 +16,21 @@ services:
   Bot:
     container_name: BotService
     image: yt_fetcher_tgbot
-    enviroment:
-      POSTGRES_DB: "${POSTGRES_DB}"
+    environment:
+      POSTGRES_DB: "app_db"
       POSTGRES_USER: "${POSTGRES_USER}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       PGDATA: "/var/lib/postgresql/data/pgdata"
     secrets:
       - yt_api_keys
-      - tg_api_key
+      - bot_token
+      - bot_password
     networks:
       - yt_fetcher_network
 
-  Filter:
 
 volumes:
-  yt_fetcher_volume
+  yt_fetcher_volume:
 
 networks:
   yt_fetcher_network:
@@ -40,6 +39,7 @@ networks:
 secrets:
   yt_api_keys:
     file: ./yt_api_keys
-  tg_api_key:
-    file: ./tg_api_key
-
+  bot_token:
+    file: ./bot_token
+  bot_password:
+    file: ./bot_password
