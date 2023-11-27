@@ -10,6 +10,10 @@ CREATE TABLE ignore_list (
 );
 
 CREATE TABLE next_page (
-    token VARCHAR(10) PRIMARY KEY,
+    id INT PRIMARY KEY,
+    token VARCHAR(10),
     refresh DATE
 );
+
+-- insert default values
+INSERT INTO next_page(id, token, refresh) VALUES(1, '', CURRENT_DATE);
