@@ -6,8 +6,6 @@
 
 ### Prerequisites
 
-What things you need to install the software and how to install them
-
 ```
 git clone https://github.com/greg-zamza/youtube_thumbnails_fetcher
 cd youtube_thumbnails_fetcher
