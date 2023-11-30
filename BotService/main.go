@@ -22,6 +22,7 @@ var bot_token string
 var bot_password string
 var api_keys []string
 const apiURL string = "https://www.googleapis.com/youtube/v3/search"
+const filterBaseURL string = "http://FilterService:8081/process"
 
 func init() {
     /* декларируем секретные данные */
@@ -88,23 +89,13 @@ func indexOf(slice []string, element string) int {
 
 // структура, описывающая response от yt data api (search)
 type YouTubeResponse struct {
-	Kind          string `json:"kind"`
-	Etag          string `json:"etag"`
 	NextPageToken string `json:"nextPageToken"`
-	RegionCode    string `json:"regionCode"`
-	PageInfo      struct {
-		TotalResults   int `json:"totalResults"`
-		ResultsPerPage int `json:"resultsPerPage"`
-	} `json:"pageInfo"`
 	Items []struct {
-		Kind string `json:"kind"`
-		Etag string `json:"etag"`
 		ID   struct {
 			Kind    string `json:"kind"`
 			VideoID string `json:"videoId"`
 		} `json:"id"`
 		Snippet struct {
-			PublishedAt time.Time `json:"publishedAt"`
 			ChannelID   string    `json:"channelId"`
 			Title       string    `json:"title"`
 			Description string    `json:"description"`
@@ -114,11 +105,6 @@ type YouTubeResponse struct {
 					Width  int    `json:"width"`
 					Height int    `json:"height"`
 				} `json:"default"`
-				Medium struct {
-					URL    string `json:"url"`
-					Width  int    `json:"width"`
-					Height int    `json:"height"`
-				} `json:"medium"`
 				High struct {
 					URL    string `json:"url"`
 					Width  int    `json:"width"`
@@ -126,10 +112,35 @@ type YouTubeResponse struct {
 				} `json:"high"`
 			} `json:"thumbnails"`
 			ChannelTitle         string    `json:"channelTitle"`
-			LiveBroadcastContent string    `json:"liveBroadcastContent"`
-			PublishTime          time.Time `json:"publishTime"`
 		} `json:"snippet"`
 	} `json:"items"`
+}
+
+// структура JSON ответа от FilterService
+type FilterServiceAnswer struct {
+    Name            string `json:"name"`
+	SubscriberCount string `json:"subscriberCount"`
+	URL             string `json:"url"`
+	ThumbURLa       string `json:"thumbURLa"`
+	ThumbURLb       string `json:"thumbURLb"`
+	ThumbURLc       string `json:"thumbURLc"`
+}
+
+// метод FilterServiceAnswer, возвращающий строку с её полями
+func (a FilterServiceAnswer) String() string {
+	result := ""
+
+	addField := func(fieldName, value string) {
+		if value != "" {
+			result += fmt.Sprintf("%s: %s\n", fieldName, value)
+		}
+	}
+
+	addField("name", a.Name)
+	addField("subscribers", a.SubscriberCount)
+	addField("link", a.URL)
+
+	return result
 }
 
 func main() {
@@ -165,6 +176,7 @@ func main() {
                 if err != nil || n < 1 || n > 50 {
                     api.SendMessage("Please send number from 1 to 50", update.ChatID(), nil)
                 } else {
+                    /* api.SendMessage(fmt.Sprintf("current api_key: ***%s***", yt_api_key[3:10]), update.ChatID(), nil) */
                     // запрос к youtube data API
                     counter = 0
                     for ;counter < n; {
@@ -178,12 +190,28 @@ func main() {
 	                    params.Set("type", "video")
                         params.Set("pageToken", nextPageToken)
 	                    params.Set("key", yt_api_key)
+                        dateString := fmt.Sprintf(time.Now().Add(time.Hour * -720).Format("2006-01-02")+"T00:00:00Z")
+                        params.Set("publishedAfter", dateString)
 
 	                    requestURL := fmt.Sprintf("%s?%s", apiURL, params.Encode())
-
-	                    response, err := http.Get(requestURL)
+                        
+                        client := &http.Client{}
+    
+                        req, err := http.NewRequest("GET", requestURL, nil)
 	                    if err != nil {
-                            messagetext := fmt.Sprintf("yt data API returned error: %v\nПопробуй отправить запрос ещё раз", err)
+		                    log.Println("warning")
+		                    break
+	                    }
+                        response, err := client.Do(req)
+                        if err != nil {
+		                    log.Println("warning")
+		                    break
+	                    }
+	                    defer response.Body.Close()
+
+                        if response.StatusCode != 200 {
+                            messagetext := fmt.Sprintf("yt data API returned error: %v\nПопробуй отправить запрос ещё раз", response.Status)
+                            api.SendMessage(messagetext, update.ChatID(), nil)
                             if len(api_keys) == 1 {
                                 api.SendMessage("It seems that the daily requests limit has been exhausted", update.ChatID(), nil)
                             } else {
@@ -196,7 +224,6 @@ func main() {
                             }
                             break
 	                    }
-	                    defer response.Body.Close()
 
 	                    // Чтение ответа
 	                    body, err := ioutil.ReadAll(response.Body)
@@ -227,9 +254,83 @@ func main() {
                         
                         // Проходимся по элементам коллекции Items
                         for _, video := range result.Items {
-                            api.SendMessage(video.Snippet.ChannelID, update.ChatID(), nil)
-                            counter++
+                            var ignore bool
+                            err = db.QueryRow("SELECT EXISTS (SELECT 1 FROM ignore_list WHERE id = $1)", video.Snippet.ChannelID).Scan(&ignore)
+                            if err != nil {
+                                log.Println("not selected from db")
+                            }
+                            if !ignore {
+                                _, err = db.Exec("INSERT INTO ignore_list (id) VALUES ($1)", video.Snippet.ChannelID)
+                                if err != nil {
+                                    log.Println("not inserted to db")
+                                }
+
+                                // request to FilterService microservice
+                                paramsFilter := url.Values{}
+                                paramsFilter.Set("channel_id", video.Snippet.ChannelID)
+                                paramsFilter.Set("key", yt_api_key)
+
+                                filterURL := fmt.Sprintf("%s?%s", filterBaseURL, paramsFilter.Encode())
+                                requestFilter, err := http.NewRequest("GET", filterURL, nil)
+                                if err != nil {
+                                    log.Println("request filter error (http.NewRequest)")
+                                    continue
+                                }
+
+                                responseFilter, err := client.Do(requestFilter)
+                                if err != nil {
+                                    log.Println("request filter error (client.Do)")
+                                    continue
+                                }
+                                defer responseFilter.Body.Close()
+
+                                bodyFilter, err := ioutil.ReadAll(responseFilter.Body)
+                                
+                                if err == nil {
+                                    if string(bodyFilter) != "" {
+                                        var resultAnswer FilterServiceAnswer
+                                        err = json.Unmarshal(bodyFilter, &resultAnswer)
+                                        if err != nil {
+                                            continue
+                                        }
+
+                                        var photos []echotron.InputFile
+                                        if url := resultAnswer.ThumbURLa; url != "" {
+	                                    	photos = append(photos, echotron.NewInputFileURL(url))
+	                                    }
+	                                    if url := resultAnswer.ThumbURLb; url != "" {
+		                                    photos = append(photos, echotron.NewInputFileURL(url))
+	                                    }
+	                                    if url := resultAnswer.ThumbURLc; url != "" {
+		                                    photos = append(photos, echotron.NewInputFileURL(url))
+	                                    }
+
+                                        var photosMedia []echotron.GroupableInputMedia
+                                        for idx, photo := range photos {
+                                            if idx == 0 {
+                                                photoMedia := echotron.InputMediaPhoto{
+                                                    Type: echotron.MediaTypePhoto,
+                                                    Media: photo,
+                                                    Caption: resultAnswer.String(),
+                                                }
+                                                photosMedia = append(photosMedia, echotron.GroupableInputMedia(photoMedia))
+                                            } else {
+                                                photoMedia := echotron.InputMediaPhoto{
+                                                    Type: echotron.MediaTypePhoto,
+                                                    Media: photo,
+                                                }
+                                                photosMedia = append(photosMedia, echotron.GroupableInputMedia(photoMedia))
+                                            }
+                                        }
+
+                                        api.SendMediaGroup(update.ChatID(), photosMedia, nil)
+                                        counter++
+                                    }
+                                }
+                            }
                         }
+                        /*log_message := fmt.Sprintf("log:\ntotal: %d", counter)
+                        api.SendMessage(log_message, update.ChatID(), nil)*/
                     }
                 }
             } else {

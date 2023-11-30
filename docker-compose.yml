@@ -12,6 +12,7 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - yt_fetcher_network
+    restart: unless-stopped
 
   Bot:
     container_name: BotService
@@ -27,7 +28,14 @@ services:
       - bot_password
     networks:
       - yt_fetcher_network
+    restart: unless-stopped
 
+  Filter:
+    container_name: FilterService
+    image: yt_fetcher_filter
+    networks:
+      - yt_fetcher_network
+    restart: unless-stopped
 
 volumes:
   yt_fetcher_volume:
