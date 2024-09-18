@@ -8,7 +8,7 @@
 
 ```
 git clone https://github.com/greg-zamza/yt-thumbnails-fetcher
-cd youtube_thumbnails_fetcher
+cd yt-thumbnails-fetcher
 ```
 
 ### Running
