@@ -7,7 +7,7 @@
 ### Prerequisites
 
 ```
-git clone https://github.com/greg-zamza/youtube_thumbnails_fetcher
+git clone https://github.com/greg-zamza/yt-thumbnails-fetcher
 cd youtube_thumbnails_fetcher
 ```
 
